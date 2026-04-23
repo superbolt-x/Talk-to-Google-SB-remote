@@ -288,6 +288,7 @@ def run_init_wizard() -> None:
             from adloop.auth import _oauth_flow
 
             cfg = load_config(str(_CONFIG_PATH))
+            Path(cfg.google.token_path).expanduser().unlink(missing_ok=True)
             _oauth_flow(cfg)
             _print("  ✓ OAuth token saved — AdLoop is ready to connect")
         except Exception as exc:
