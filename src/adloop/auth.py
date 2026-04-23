@@ -123,7 +123,18 @@ def _oauth_flow(config: AdLoopConfig) -> Credentials:
         flow = InstalledAppFlow.from_client_secrets_file(
             str(creds_path), _ALL_SCOPES
         )
-        creds = flow.run_local_server(port=0)
+        
+        auth_url, _ = flow.authorization_url(prompt="consent")
+        
+        print("\n🔐 Google Authorization Required")
+        print("Open this URL in your browser:\n")
+        print(auth_url)
+        print()
+        
+        creds = flow.run_local_server(
+            port=0,
+            open_browser=False  # 👈 prevents silent failure
+        )
 
     token_path.parent.mkdir(parents=True, exist_ok=True)
     with open(token_path, "w") as f:
