@@ -15,15 +15,19 @@ dependencies = [
     "google-analytics-data>=0.20.0",
     "google-analytics-admin>=0.27.0",
     "google-auth-oauthlib>=1.0.0",
-    "pyyaml>=6.0",
+    "uvicorn>=0.29.0",
+    "starlette>=0.37.0",
 ]
 
 [project.scripts]
 adloop = "adloop:main"
 
 [build-system]
-requires = ["uv_build>=0.10.8,<0.11.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]

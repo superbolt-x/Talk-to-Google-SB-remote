@@ -1,19 +1,16 @@
-"""Load and validate AdLoop configuration from ~/.adloop/config.yaml."""
+"""Load AdLoop configuration from environment variables for remote deployment."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
-
-import yaml
 
 
 @dataclass
 class GoogleConfig:
     project_id: str = ""
-    credentials_path: str = "~/.adloop/credentials.json"
-    token_path: str = "~/.adloop/token.json"
+    credentials_path: str = ""
+    token_path: str = ""
 
 
 @dataclass
@@ -33,7 +30,7 @@ class SafetyConfig:
     max_daily_budget: float = 50.0
     max_bid_increase_pct: int = 100
     require_dry_run: bool = True
-    log_file: str = "~/.adloop/audit.log"
+    log_file: str = "/tmp/adloop-audit.log"
     blocked_operations: list[str] = field(default_factory=list)
 
 
@@ -45,54 +42,27 @@ class AdLoopConfig:
     safety: SafetyConfig = field(default_factory=SafetyConfig)
 
 
-def _resolve_path(path_str: str) -> Path:
-    """Expand ~ and env vars in a path string."""
-    return Path(os.path.expandvars(os.path.expanduser(path_str)))
-
-
 def load_config(config_path: str | None = None) -> AdLoopConfig:
-    """Load configuration from YAML file.
+    """Load configuration from environment variables.
 
-    Resolution order:
-    1. Explicit ``config_path`` argument
-    2. ``ADLOOP_CONFIG`` environment variable
-    3. ``~/.adloop/config.yaml`` default
+    config_path is ignored in remote mode — all settings come from env vars.
     """
-    if config_path is None:
-        config_path = os.environ.get("ADLOOP_CONFIG", "~/.adloop/config.yaml")
-
-    path = _resolve_path(config_path)
-
-    if not path.exists():
-        return AdLoopConfig()
-
-    with open(path) as f:
-        raw = yaml.safe_load(f) or {}
-
-    google_raw = raw.get("google", {})
-    ga4_raw = raw.get("ga4", {})
-    ads_raw = raw.get("ads", {})
-    safety_raw = raw.get("safety", {})
-
     return AdLoopConfig(
         google=GoogleConfig(
-            project_id=google_raw.get("project_id", ""),
-            credentials_path=google_raw.get("credentials_path", "~/.adloop/credentials.json"),
-            token_path=google_raw.get("token_path", "~/.adloop/token.json"),
+            project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
         ),
         ga4=GA4Config(
-            property_id=ga4_raw.get("property_id", ""),
+            property_id=os.environ.get("ADLOOP_GA4_PROPERTY_ID", ""),
         ),
         ads=AdsConfig(
-            developer_token=ads_raw.get("developer_token", ""),
-            customer_id=ads_raw.get("customer_id", ""),
-            login_customer_id=ads_raw.get("login_customer_id", ""),
+            developer_token=os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+            customer_id=os.environ.get("GOOGLE_ADS_CUSTOMER_ID", ""),
+            login_customer_id=os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", ""),
         ),
         safety=SafetyConfig(
-            max_daily_budget=safety_raw.get("max_daily_budget", 50.0),
-            max_bid_increase_pct=safety_raw.get("max_bid_increase_pct", 100),
-            require_dry_run=safety_raw.get("require_dry_run", True),
-            log_file=safety_raw.get("log_file", "~/.adloop/audit.log"),
-            blocked_operations=safety_raw.get("blocked_operations", []),
+            max_daily_budget=float(os.environ.get("ADLOOP_MAX_DAILY_BUDGET", "50.0")),
+            max_bid_increase_pct=int(os.environ.get("ADLOOP_MAX_BID_INCREASE_PCT", "100")),
+            require_dry_run=os.environ.get("ADLOOP_REQUIRE_DRY_RUN", "true").lower() != "false",
+            log_file="/tmp/adloop-audit.log",
         ),
     )

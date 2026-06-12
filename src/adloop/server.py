@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import functools
+import logging
+import os
 from typing import Callable
 
 from fastmcp import FastMCP
@@ -10,18 +12,71 @@ from mcp.types import ToolAnnotations
 
 from adloop.config import load_config
 
+logger = logging.getLogger("adloop")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+
 _READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
 _WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False)
 _DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
 
-mcp = FastMCP(
-    "AdLoop",
-    instructions=(
-        "AdLoop connects Google Ads and Google Analytics (GA4) data to your "
-        "codebase. Use the read tools to analyze performance, and the write "
-        "tools (with safety confirmation) to manage campaigns."
-    ),
-)
+# ── OAuth setup ──────────────────────────────────────────────────────────────
+# SERVER_URL: public Railway base URL, e.g. https://xxx.railway.app
+# MCP_AUTH_TOKEN: passphrase users enter once in the browser to authorize Claude.
+
+_server_url = os.environ.get("SERVER_URL", "").rstrip("/")
+_auth_token = os.environ.get("MCP_AUTH_TOKEN", "")
+
+if _server_url and _auth_token:
+    from urllib.parse import urlparse
+    from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+    from mcp.server.transport_security import TransportSecuritySettings
+    from adloop.oauth import SimpleMCPOAuthProvider
+
+    _oauth_provider = SimpleMCPOAuthProvider(auth_token=_auth_token)
+
+    _auth_settings = AuthSettings(
+        issuer_url=_server_url,                        # type: ignore[arg-type]
+        resource_server_url=f"{_server_url}/mcp",      # type: ignore[arg-type]
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=["mcp"],
+            default_scopes=["mcp"],
+        ),
+    )
+
+    _hostname = urlparse(_server_url).netloc
+    _transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[_hostname, f"{_hostname}:*"],
+        allowed_origins=[_server_url, f"{_server_url}:*"],
+    )
+
+    mcp = FastMCP(
+        "AdLoop",
+        instructions=(
+            "AdLoop connects Google Ads and Google Analytics (GA4) data to your "
+            "codebase. Use the read tools to analyze performance, and the write "
+            "tools (with safety confirmation) to manage campaigns."
+        ),
+        auth=_auth_settings,
+        auth_server_provider=_oauth_provider,
+        transport_security=_transport_security,
+    )
+    logger.info("OAuth enabled — issuer: %s  resource: %s/mcp", _server_url, _server_url)
+else:
+    _oauth_provider = None
+    mcp = FastMCP(
+        "AdLoop",
+        instructions=(
+            "AdLoop connects Google Ads and Google Analytics (GA4) data to your "
+            "codebase. Use the read tools to analyze performance, and the write "
+            "tools (with safety confirmation) to manage campaigns."
+        ),
+    )
+    if not _server_url:
+        logger.warning("SERVER_URL not set — OAuth disabled")
+    if not _auth_token:
+        logger.warning("MCP_AUTH_TOKEN not set — OAuth disabled")
 
 _config = load_config()
 
@@ -926,3 +981,126 @@ def estimate_budget(
         forecast_days=forecast_days,
         customer_id=customer_id or _config.ads.customer_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# HTTP server entrypoint
+# ---------------------------------------------------------------------------
+
+
+def main():
+    """Run the MCP server.
+
+    Transport is controlled by the MCP_TRANSPORT env var:
+      - streamable-http (default) — modern HTTP, recommended for remote deployments
+      - sse                       — legacy Server-Sent Events HTTP transport
+      - stdio                     — local stdio transport for Claude Desktop / CLI
+
+    HTTP env vars (ignored for stdio):
+      MCP_HOST — bind address (default: 0.0.0.0)
+      MCP_PORT — bind port    (default: 8000)
+    """
+    import uvicorn
+
+    transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
+    logger.info("Starting AdLoop MCP server transport=%s", transport)
+
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+        return
+
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT") or os.environ.get("MCP_PORT", "8000"))
+
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+    from starlette.routing import Mount, Route
+    import json as _json
+    from contextlib import asynccontextmanager
+
+    _raw_mcp_app = mcp.streamable_http_app() if transport == "streamable-http" else mcp.sse_app()
+
+    class _GrantTypeFixMiddleware:
+        """Patch POST /register to include refresh_token in grant_types."""
+
+        def __init__(self, app):
+            self._app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") == "http" and scope.get("path") == "/register":
+                chunks: list[bytes] = []
+                more = True
+                while more:
+                    msg = await receive()
+                    chunks.append(msg.get("body", b""))
+                    more = msg.get("more_body", False)
+                body = b"".join(chunks)
+
+                try:
+                    data = _json.loads(body)
+                    gt = set(data.get("grant_types") or [])
+                    if "authorization_code" in gt and "refresh_token" not in gt:
+                        data["grant_types"] = sorted(gt | {"refresh_token"})
+                        body = _json.dumps(data).encode()
+                except Exception:
+                    pass
+
+                _body_sent = False
+
+                async def _patched_receive():
+                    nonlocal _body_sent
+                    if not _body_sent:
+                        _body_sent = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    return {"type": "http.disconnect"}
+
+                await self._app(scope, _patched_receive, send)
+            else:
+                await self._app(scope, receive, send)
+
+    mcp_app = _GrantTypeFixMiddleware(_raw_mcp_app)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with _raw_mcp_app.router.lifespan_context(_app):
+            yield
+
+    async def health(_: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok", "transport": transport, "oauth": bool(_oauth_provider)})
+
+    async def oauth_approve(request: Request) -> HTMLResponse | RedirectResponse:
+        if _oauth_provider is None:
+            return HTMLResponse("OAuth not configured.", status_code=503)
+
+        pending_id = request.query_params.get("pending_id", "")
+
+        if request.method == "GET":
+            return HTMLResponse(_oauth_provider.render_approve_form(pending_id))
+
+        form = await request.form()
+        passphrase = str(form.get("passphrase", ""))
+        pending_id = str(form.get("pending_id", pending_id))
+        ok, redirect_url, error = _oauth_provider.handle_approval(pending_id, passphrase)
+
+        if ok and redirect_url:
+            return RedirectResponse(redirect_url, status_code=302)
+
+        return HTMLResponse(
+            _oauth_provider.render_approve_form(pending_id, error or "Authorization failed."),
+            status_code=400,
+        )
+
+    routes = [
+        Route("/health", health),
+        Route("/oauth/approve", oauth_approve, methods=["GET", "POST"]),
+        Mount("/", app=mcp_app),
+    ]
+
+    app = Starlette(lifespan=lifespan, routes=routes)
+    logger.info("Listening on %s:%s", host, port)
+    uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
