@@ -7,17 +7,15 @@ import logging
 import os
 from typing import Callable
 
-from fastmcp import FastMCP
-from mcp.types import ToolAnnotations
-
+from mcp.server.fastmcp import FastMCP
 from adloop.config import load_config
 
 logger = logging.getLogger("adloop")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
-_READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False)
-_DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+_READONLY = None
+_WRITE = None
+_DESTRUCTIVE = None
 
 # ── OAuth setup ──────────────────────────────────────────────────────────────
 # SERVER_URL: public Railway base URL, e.g. https://xxx.railway.app
