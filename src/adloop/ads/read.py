@@ -142,6 +142,9 @@ def get_search_terms(
     from adloop.ads.gaql import execute_query
 
     if date_range_start and date_range_end:
+        from adloop.dates import validate_iso_date_range
+
+        validate_iso_date_range(date_range_start, date_range_end)
         query = f"""
             SELECT search_term_view.search_term,
                    campaign.name, ad_group.name,
@@ -394,8 +397,19 @@ def get_negative_keywords(
 
 
 def _date_clause(start: str, end: str) -> str:
-    """Build a GAQL date WHERE fragment."""
+    """Build a GAQL date WHERE fragment for an INCLUSIVE [start, end] range.
+
+    GAQL's BETWEEN is inclusive on both ends, so '2026-06-01' AND '2026-06-07'
+    covers seven days. When tiling adjacent windows for week-over-week analysis,
+    advance the next start by one day — reusing an end date as the next start
+    double-counts that day's metrics. Use ``adloop.dates.split_date_range`` to
+    generate safe non-overlapping windows. Empty start/end falls back to
+    LAST_30_DAYS.
+    """
+    from adloop.dates import validate_iso_date_range
+
     if start and end:
+        validate_iso_date_range(start, end)
         return f"AND segments.date BETWEEN '{start}' AND '{end}'"
     return "AND segments.date DURING LAST_30_DAYS"
 
