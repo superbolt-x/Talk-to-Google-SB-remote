@@ -302,6 +302,39 @@ def list_accounts() -> dict:
 
 @mcp.tool(annotations=_READONLY)
 @_safe
+def split_date_range(
+    date_range_start: str,
+    date_range_end: str,
+    days: int = 7,
+) -> dict:
+    """Split an inclusive date range into consecutive, NON-overlapping windows.
+
+    Call this before pulling week-over-week (or any multi-window) performance.
+    Every AdLoop date range is inclusive on both ends, so if you reuse an end
+    date as the next window's start, that day's cost, impressions, and clicks
+    are counted twice — and a sum of weekly pulls will overstate the true total
+    (the more windows, the larger the overcount). The windows returned here tile
+    the range cleanly so summing a metric across them equals the whole-range value.
+
+    days=7 with a Monday start gives Mon–Sun weeks. Date format: "YYYY-MM-DD".
+    Returns: {"windows": [{"start", "end"}, ...], "total_windows", "days_per_window"}.
+    """
+    from adloop.dates import split_date_range as _impl
+
+    windows = _impl(date_range_start, date_range_end, days=days)
+    return {
+        "windows": [{"start": s, "end": e} for s, e in windows],
+        "total_windows": len(windows),
+        "days_per_window": days,
+        "note": (
+            "Windows are inclusive and non-overlapping; summing a metric across "
+            "them equals the metric over the full range."
+        ),
+    }
+
+
+@mcp.tool(annotations=_READONLY)
+@_safe
 def get_campaign_performance(
     customer_id: str = "",
     date_range_start: str = "",
@@ -311,7 +344,9 @@ def get_campaign_performance(
 
     Returns: campaign name, status, type, impressions, clicks, cost,
     conversions, CPA, ROAS, CTR for each campaign.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. For
+    weekly/multi-window pulls, build windows with split_date_range — adjacent
+    windows that share a boundary day double-count cost, impressions, and clicks.
     """
     from adloop.ads.read import get_campaign_performance as _impl
 
@@ -334,6 +369,9 @@ def get_ad_performance(
 
     Returns: ad type, headlines, descriptions, final URL, impressions,
     clicks, CTR, conversions, cost for each ad.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_ad_performance as _impl
 
@@ -356,6 +394,9 @@ def get_keyword_performance(
 
     Returns: keyword text, match type, quality score, impressions,
     clicks, CTR, CPC, conversions for each keyword.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_keyword_performance as _impl
 
@@ -378,6 +419,9 @@ def get_search_terms(
 
     Critical for finding negative keyword opportunities and understanding user intent.
     Returns: search term, campaign, ad group, impressions, clicks, conversions.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_search_terms as _impl
 
@@ -400,7 +444,9 @@ def get_ad_group_performance(
 
     Returns: campaign name, ad group name, status, type, impressions, clicks,
     cost, conversions, CPA, CTR for each ad group.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_ad_group_performance as _impl
 
@@ -424,7 +470,9 @@ def get_asset_group_performance(
     Returns: campaign name, asset group name, status, ad strength, final URLs,
     impressions, clicks, cost, conversions for each asset group.
     Ad strength values: EXCELLENT, GOOD, POOR, PENDING, UNKNOWN.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_asset_group_performance as _impl
 
@@ -451,7 +499,9 @@ def get_asset_group_asset_performance(
 
     Use this to identify which PMax assets drive results and which to replace.
     Complements get_asset_group_performance (aggregate) with per-asset detail.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_asset_group_asset_performance as _impl
 
@@ -478,7 +528,9 @@ def get_ad_group_ad_asset_performance(
 
     Works for Responsive Search Ads — use this to identify which headlines
     and descriptions drive performance and which should be replaced.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_ad_group_ad_asset_performance as _impl
 
@@ -502,7 +554,9 @@ def get_product_performance(
     Returns: product ID, title, brand, type, category, condition,
     impressions, clicks, cost, conversions, and ROAS per product.
     Use this to identify top/underperforming products in Shopping or PMax.
-    Date format: "YYYY-MM-DD". Empty = last 30 days. Max 500 products.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Max 500
+    products. Use split_date_range for week-over-week so adjacent windows don't
+    share a boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.ads.read import get_product_performance as _impl
 
@@ -552,7 +606,9 @@ def analyze_campaign_conversions(
 
     property_id: numeric GA4 property ID for the client. Call
     get_account_summaries() first if unsure. Falls back to config default.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.crossref import analyze_campaign_conversions as _impl
 
@@ -582,7 +638,9 @@ def landing_page_analysis(
 
     property_id: numeric GA4 property ID for the client. Call
     get_account_summaries() first if unsure. Falls back to config default.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.crossref import landing_page_analysis as _impl
 
@@ -614,7 +672,9 @@ def attribution_check(
     get_account_summaries() first if unsure. Falls back to config default.
     conversion_events: optional list of GA4 event names to specifically check
     (e.g. ["sign_up", "purchase"]). If omitted, compares aggregate totals only.
-    Date format: "YYYY-MM-DD". Empty = last 30 days.
+    Dates are INCLUSIVE on both ends (YYYY-MM-DD); empty = last 30 days. Use
+    split_date_range for week-over-week so adjacent windows don't share a
+    boundary day (which double-counts cost, impressions, and clicks).
     """
     from adloop.crossref import attribution_check as _impl
 
