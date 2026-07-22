@@ -101,9 +101,24 @@ class TokenGateMiddleware:
                     return auth[7:].strip()
         return ""
 
+    # Well-known prefixes a client probes to discover an OAuth/OIDC sign-in service.
+    _OAUTH_DISCOVERY_PREFIXES = (
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/openid-configuration",
+    )
+
     async def __call__(self, scope, receive, send):
-        if self._token and scope.get("type") == "http":
-            if not secrets.compare_digest(self._provided(scope), self._token):
+        if scope.get("type") == "http":
+            path = scope.get("path", "")
+            # Authless: no OAuth is advertised. 404 the discovery probes so the
+            # connector never attempts OAuth/DCR (which would fail — there is no
+            # auth server). Applies whether or not a shared-secret token is set.
+            if any(path.startswith(p) for p in self._OAUTH_DISCOVERY_PREFIXES):
+                from starlette.responses import PlainTextResponse
+                await PlainTextResponse("Not Found", status_code=404)(scope, receive, send)
+                return
+            if self._token and not secrets.compare_digest(self._provided(scope), self._token):
                 from starlette.responses import JSONResponse
                 await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
                 return
