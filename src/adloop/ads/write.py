@@ -330,6 +330,49 @@ def confirm_and_apply(
     if config.safety.require_dry_run:
         dry_run = True
 
+    if dry_run and plan.operation in VALIDATE_ONLY_OPERATIONS:
+        try:
+            validation = _execute_plan(config, plan, validate_only=True)
+        except Exception as e:
+            log_mutation(
+                config.safety.log_file,
+                operation=plan.operation,
+                customer_id=plan.customer_id,
+                entity_type=plan.entity_type,
+                entity_id=plan.entity_id,
+                changes=plan.changes,
+                dry_run=True,
+                result="error",
+                error=str(e),
+            )
+            from adloop.ads.swaps import google_ads_error_text
+
+            return {
+                "status": "DRY_RUN_FAILED",
+                "error": google_ads_error_text(e),
+                "plan_id": plan.plan_id,
+            }
+        log_mutation(
+            config.safety.log_file,
+            operation=plan.operation,
+            customer_id=plan.customer_id,
+            entity_type=plan.entity_type,
+            entity_id=plan.entity_id,
+            changes=plan.changes,
+            dry_run=True,
+            result="dry_run_success",
+        )
+        return {
+            "status": "DRY_RUN_SUCCESS",
+            "plan_id": plan.plan_id,
+            "operation": plan.operation,
+            "validated_by_google": validation.get("validated", False),
+            "message": (
+                "Google validated this change (validate_only) — nothing was changed. "
+                "To apply for real, call confirm_and_apply again with dry_run=false."
+            ),
+        }
+
     if dry_run:
         log_mutation(
             config.safety.log_file,
@@ -622,12 +665,29 @@ def _draft_status_change(
 # ---------------------------------------------------------------------------
 
 
-def _execute_plan(config: AdLoopConfig, plan: object) -> dict:
+#: Operations whose dry run is checked by Google itself (validate_only=True)
+#: instead of only being logged.
+VALIDATE_ONLY_OPERATIONS = {"update_responsive_search_ad", "swap_asset"}
+
+
+def _execute_plan(config: AdLoopConfig, plan: object, *, validate_only: bool = False) -> dict:
     """Dispatch to the right Google Ads mutate call based on plan.operation."""
     from adloop.ads.client import get_ads_client, normalize_customer_id
+    from adloop.ads.swaps import apply_swap_asset, apply_update_rsa
 
     client = get_ads_client(config)
     cid = normalize_customer_id(plan.customer_id)
+
+    swap_dispatch = {
+        "update_responsive_search_ad": apply_update_rsa,
+        "swap_asset": apply_swap_asset,
+    }
+    if plan.operation in swap_dispatch:
+        return swap_dispatch[plan.operation](
+            client, cid, plan.changes, config=config, validate_only=validate_only
+        )
+    if validate_only:
+        raise ValueError(f"validate_only is not supported for {plan.operation}")
 
     dispatch = {
         "create_campaign": _apply_create_campaign,

@@ -91,6 +91,8 @@ All write operations follow a **draft → preview → confirm** workflow. Nothin
 | `draft_responsive_search_ad` | Create RSA preview (3-15 headlines ≤30 chars, 2-4 descriptions ≤90 chars). Warns if headline/description count is below best practice. |
 | `draft_keywords` | Propose keyword additions with match types. Proactively checks bidding strategy — blocks BROAD match on Manual CPC campaigns. |
 | `add_negative_keywords` | Propose negative keywords to reduce wasted spend |
+| `draft_update_rsa` | Swap headlines/descriptions on an **existing** RSA in place (same ad ID and history, pins kept). Lists every ad group sharing the ad. Dry run validated by Google. |
+| `draft_swap_asset` | Replace, add or unlink a sitelink, callout or image at customer, campaign or ad group level, as one atomic change. Removes only the old link, never the asset. Dry run validated by Google. |
 | `pause_entity` | Pause a campaign, ad group, ad, or keyword |
 | `enable_entity` | Re-enable a paused entity |
 | `remove_entity` | Permanently remove an entity (irreversible — prefers pause). Supports keywords, negative keywords, ads, ad groups, campaigns. |

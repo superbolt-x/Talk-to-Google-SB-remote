@@ -81,6 +81,8 @@ These tools call both APIs internally and return unified results with computed `
 | `draft_responsive_search_ad` | Create RSA preview (does NOT publish) | 3-15 headlines (≤30 chars), 2-4 descriptions (≤90 chars), final_url required |
 | `draft_keywords` | Propose keyword additions (does NOT add) | Each keyword needs `text` and `match_type` (EXACT/PHRASE/BROAD) |
 | `add_negative_keywords` | Propose negative keywords (does NOT add) | `campaign_id`, keyword list, `match_type` |
+| `draft_update_rsa` | Propose in-place headline/description swaps on an existing RSA | `ad_id`, swaps `{old, new}`; `old` must match live text; ≤30/≤90 chars; 3-15 / 2-4 total |
+| `draft_swap_asset` | Propose replacing/adding/unlinking a sitelink, callout or image | `level` + `parent_id`, `field_type`, `old_asset_id` and/or `new_asset` |
 | `pause_entity` | Propose pausing campaign/ad group/ad/keyword | `entity_type`, `entity_id` |
 | `enable_entity` | Propose enabling paused entity | `entity_type`, `entity_id` |
 | `remove_entity` | Propose REMOVING an entity (irreversible) | `entity_type` (incl. "negative_keyword"), `entity_id` |
