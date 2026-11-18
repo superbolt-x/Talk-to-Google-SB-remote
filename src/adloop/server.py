@@ -968,6 +968,83 @@ def remove_entity(
     )
 
 
+@mcp.tool(annotations=_WRITE)
+@_safe
+def draft_update_rsa(
+    ad_id: str,
+    headline_swaps: list[dict] | None = None,
+    description_swaps: list[dict] | None = None,
+    customer_id: str = "",
+) -> dict:
+    """Draft swapping headlines/descriptions on an EXISTING Responsive Search Ad — returns a PREVIEW.
+
+    Edits the ad in place (same as editing it in the Google Ads UI): the ad keeps
+    its ID, status and history, and goes back through policy review. Use this
+    instead of creating a new ad + pausing the old one.
+
+    ad_id: the numeric ad ID (e.g. "711584178185").
+    headline_swaps: [{"old": "current headline text", "new": "replacement"}]
+    description_swaps: [{"old": "current description text", "new": "replacement"}]
+      - "old" must match the live text exactly; the replacement keeps its pin.
+      - "old" empty = add "new" as an extra (unpinned) asset.
+    Limits: headlines <= 30 chars (3-15 total), descriptions <= 90 chars (2-4 total).
+
+    If the ad is SHARED by several ad groups, the update reaches all of them —
+    the preview lists them in served_in. Call confirm_and_apply with the plan_id;
+    its dry run is validated by Google (validate_only).
+    """
+    from adloop.ads.swaps import draft_update_rsa as _impl
+
+    return _impl(
+        _config,
+        customer_id=customer_id or _config.ads.customer_id,
+        ad_id=ad_id,
+        headline_swaps=headline_swaps,
+        description_swaps=description_swaps,
+    )
+
+
+@mcp.tool(annotations=_WRITE)
+@_safe
+def draft_swap_asset(
+    level: str,
+    field_type: str,
+    parent_id: str = "",
+    old_asset_id: str = "",
+    new_asset: dict | None = None,
+    customer_id: str = "",
+) -> dict:
+    """Draft replacing, adding or unlinking a sitelink, callout or image asset — returns a PREVIEW.
+
+    level: "customer", "campaign" or "ad_group" — where the asset is linked.
+    parent_id: the campaign or ad group ID (not needed for "customer").
+    field_type: "SITELINK", "CALLOUT" or "AD_IMAGE".
+    old_asset_id: the asset to unlink at that level (omit to only add).
+    new_asset (omit to only unlink), one of:
+      - SITELINK: {"link_text", "description1", "description2", "final_url"}
+        (link_text <= 25 chars, descriptions <= 35 chars each, both or neither)
+      - CALLOUT:  {"text"} (<= 25 chars)
+      - AD_IMAGE: {"image_url", "name"?} — a direct image URL the server can download
+      - any type: {"asset_id"} to link an asset that already exists in the account
+
+    Runs as one atomic change: new asset created + linked, old LINK removed.
+    The old asset itself is never deleted, so it stays wherever else it is
+    linked. Call confirm_and_apply with the plan_id; its dry run is validated by
+    Google (validate_only).
+    """
+    from adloop.ads.swaps import draft_swap_asset as _impl
+
+    return _impl(
+        _config,
+        customer_id=customer_id or _config.ads.customer_id,
+        level=level,
+        parent_id=parent_id,
+        field_type=field_type,
+        old_asset_id=old_asset_id,
+        new_asset=new_asset,
+    )
+
+
 @mcp.tool(annotations=_DESTRUCTIVE)
 @_safe
 def confirm_and_apply(
